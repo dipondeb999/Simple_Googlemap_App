@@ -12,9 +12,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late GoogleMapController _googleMapController;
   bool _inProgress = false;
-  Position? position;
+  Marker? _currentMarker;
 
   LatLng _currentPosition = const LatLng(24.530601652086695, 91.72512379949839);
+  List<LatLng> _polylineCoordinates = [];
 
   @override
   void initState() {
@@ -29,18 +30,28 @@ class _HomeScreenState extends State<HomeScreen> {
       if (isServiceEnable) {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
-            distanceFilter: 10,
+            timeLimit: Duration(seconds: 10),
             accuracy: LocationAccuracy.bestForNavigation,
           ),
         ).listen((pos) {
+          LatLng newLatLng = LatLng(pos.latitude, pos.longitude);
 
-          _currentPosition = LatLng(pos.latitude, pos.latitude);
+          _currentMarker = Marker(
+            markerId: const MarkerId('current_location'),
+            position: newLatLng,
+            infoWindow: InfoWindow(
+              title: 'My Current Location',
+              snippet: 'Lat: ${pos.latitude}, Lng: ${pos.longitude}',
+            ),
+          );
+
+          _polylineCoordinates.add(newLatLng);
+
+          _currentPosition = newLatLng;
           setState(() {});
 
           _googleMapController.animateCamera(
-            CameraUpdate.newLatLng(
-              LatLng(pos.latitude, pos.longitude),
-            ),
+            CameraUpdate.newLatLng(newLatLng),
           );
         });
       } else {
@@ -64,11 +75,27 @@ class _HomeScreenState extends State<HomeScreen> {
         _inProgress = true;
         setState(() {});
 
-        Position p = await Geolocator.getCurrentPosition();
-        _currentPosition = LatLng(p.latitude, p.longitude);
+        Position pos = await Geolocator.getCurrentPosition();
+        LatLng newLatLng = LatLng(pos.latitude, pos.longitude);
 
+        _polylineCoordinates.add(newLatLng);
+
+        _currentMarker = Marker(
+            markerId: const MarkerId('current_location'),
+          position: newLatLng,
+          infoWindow: InfoWindow(
+            title: 'My Current Location',
+            snippet: 'Lat: ${pos.latitude}, Lng: ${pos.longitude}',
+          ),
+        );
+
+        _currentPosition = newLatLng;
         _inProgress = false;
         setState(() {});
+
+        _googleMapController.animateCamera(
+            CameraUpdate.newLatLng(newLatLng),
+        );
       } else {
         Geolocator.openLocationSettings();
       }
@@ -133,6 +160,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               myLocationEnabled: true,
               myLocationButtonEnabled: true,
+              markers: _currentMarker != null ? {_currentMarker!} : {},
+              polylines: <Polyline>{
+                Polyline(
+                  polylineId: const PolylineId('polyline_tracking'),
+                  points: _polylineCoordinates,
+                  color: Colors.blue,
+                  width: 4,
+                ),
+              },
               onMapCreated: (GoogleMapController controller) {
                 _googleMapController = controller;
               },
