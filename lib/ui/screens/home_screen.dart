@@ -12,15 +12,30 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late GoogleMapController _googleMapController;
   bool _inProgress = false;
+  Marker? _initialMarker;
   Marker? _currentMarker;
 
-  LatLng _currentPosition = const LatLng(24.530601652086695, 91.72512379949839);
+  LatLng _currentPosition = const LatLng(24.530737579984187, 91.72509873853774);
+
   List<LatLng> _polylineCoordinates = [];
 
   @override
   void initState() {
+    _setInitialMarker();
     listenCurrentLocation();
     super.initState();
+  }
+
+  Future<void> _setInitialMarker() async {
+    _initialMarker = Marker(
+      markerId: const MarkerId('initial_marker'),
+      position: _currentPosition,
+      infoWindow: const InfoWindow(
+        title: 'Selected Location',
+        snippet: 'Selected Point',
+      ),
+    );
+    setState(() {});
   }
 
   Future<void> listenCurrentLocation() async {
@@ -30,7 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (isServiceEnable) {
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
-            timeLimit: Duration(seconds: 10),
             accuracy: LocationAccuracy.bestForNavigation,
           ),
         ).listen((pos) {
@@ -46,13 +60,10 @@ class _HomeScreenState extends State<HomeScreen> {
           );
 
           _polylineCoordinates.add(newLatLng);
-
           _currentPosition = newLatLng;
-          setState(() {});
 
-          _googleMapController.animateCamera(
-            CameraUpdate.newLatLng(newLatLng),
-          );
+          setState(() {});
+          _updateCameraBounds();
         });
       } else {
         Geolocator.openLocationSettings();
@@ -67,35 +78,55 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _updateCameraBounds() {
+    if (_initialMarker != null && _currentMarker != null) {
+      LatLngBounds bounds = LatLngBounds(
+        southwest: LatLng(
+          _initialMarker!.position.latitude <= _currentMarker!.position.latitude
+              ? _initialMarker!.position.latitude
+              : _currentMarker!.position.latitude,
+          _initialMarker!.position.longitude <= _currentMarker!.position.longitude
+              ? _initialMarker!.position.longitude
+              : _currentMarker!.position.longitude,
+        ),
+        northeast: LatLng(
+          _initialMarker!.position.latitude > _currentMarker!.position.latitude
+              ? _initialMarker!.position.latitude
+              : _currentMarker!.position.latitude,
+          _initialMarker!.position.longitude > _currentMarker!.position.longitude
+              ? _initialMarker!.position.longitude
+              : _currentMarker!.position.longitude,
+        ),
+      );
+
+      _googleMapController.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 100.0),
+      );
+    }
+  }
+
   Future<void> getCurrentLocation() async {
     final isGranted = await isLocationPermissionGranted();
     if (isGranted) {
       final isServiceEnable = await checkGPSServiceEnable();
       if (isServiceEnable) {
-        _inProgress = true;
-        setState(() {});
-
         Position pos = await Geolocator.getCurrentPosition();
         LatLng newLatLng = LatLng(pos.latitude, pos.longitude);
 
         _polylineCoordinates.add(newLatLng);
 
         _currentMarker = Marker(
-            markerId: const MarkerId('current_location'),
+          markerId: const MarkerId('current_location'),
           position: newLatLng,
           infoWindow: InfoWindow(
-            title: 'My Current Location',
+            title: 'My current Location',
             snippet: 'Lat: ${pos.latitude}, Lng: ${pos.longitude}',
           ),
         );
 
         _currentPosition = newLatLng;
-        _inProgress = false;
         setState(() {});
-
-        _googleMapController.animateCamera(
-            CameraUpdate.newLatLng(newLatLng),
-        );
+        _updateCameraBounds();
       } else {
         Geolocator.openLocationSettings();
       }
@@ -111,20 +142,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<bool> isLocationPermissionGranted() async {
     LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-      return true;
-    } else {
-      return false;
-    }
+    return permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse;
   }
 
   Future<bool> requestLocationPermission() async {
     LocationPermission permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-      return true;
-    } else {
-      return false;
-    }
+    return permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse;
   }
 
   Future<bool> checkGPSServiceEnable() async {
@@ -144,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         backgroundColor: Colors.blue,
         title: const Text(
-          'Simple Google Map',
+          'Tracking Map',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -154,25 +179,28 @@ class _HomeScreenState extends State<HomeScreen> {
       body: _inProgress
           ? const Center(child: CircularProgressIndicator())
           : GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _currentPosition,
-                zoom: 16,
-              ),
-              myLocationEnabled: true,
-              myLocationButtonEnabled: true,
-              markers: _currentMarker != null ? {_currentMarker!} : {},
-              polylines: <Polyline>{
-                Polyline(
-                  polylineId: const PolylineId('polyline_tracking'),
-                  points: _polylineCoordinates,
-                  color: Colors.blue,
-                  width: 4,
-                ),
-              },
-              onMapCreated: (GoogleMapController controller) {
-                _googleMapController = controller;
-              },
-            ),
+        initialCameraPosition: CameraPosition(
+          target: _currentPosition,
+          zoom: 16,
+        ),
+        myLocationEnabled: true,
+        myLocationButtonEnabled: true,
+        markers: <Marker> {
+          if (_initialMarker != null) _initialMarker!,
+          if (_currentMarker != null) _currentMarker!,
+        },
+        polylines: <Polyline> {
+          Polyline(
+            polylineId: const PolylineId('polyline_tracking'),
+            points: _polylineCoordinates,
+            color: Colors.blue,
+            width: 4,
+          ),
+        },
+        onMapCreated: (GoogleMapController controller) {
+          _googleMapController = controller;
+        },
+      ),
     );
   }
 }
